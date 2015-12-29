@@ -73,6 +73,7 @@
 ;;; Code
 
 (require 'thingatpt)
+(require 'projectile)
 
 (defvar gtags-mode nil
   "Non-nil if Gtags mode is enabled.")
@@ -330,42 +331,71 @@
 
 (defun gtags-completing-idutils (string predicate code)
   (gtags-completing 'idutils string predicate code))
+
+(defvar gtags-completing-caches '()
+  "A list of:
+    (project (files files-completions)
+             (gsyms gsyms-completions)
+             (idutils gsyms-completions)
+             (gtags gsyms-completions)).")
+
 ;; common part of completing-XXXX
 ;;   flag: 'gtags or 'gsyms or 'files
 (defun gtags-completing (flag string predicate code)
-  ; The purpose of using the -n option for the -P command is to exclude
-  ; dependence on the execution directory.
-  (let ((option (cond ((eq flag 'files)   "-cPo")
-                      ((eq flag 'gsyms)   "-cs")
-                      ((eq flag 'idutils) "-cI")
-                      (t                  "-c")))
-        (complete-list (make-vector 63 0))
-        (prev-buffer (current-buffer)))
-    ;; (if case-fold-search
-    ;;     (setq option (concat option "i")))
-    ; build completion list
-    (set-buffer (generate-new-buffer "*Completions*"))
-    (call-process "global" nil t nil option string)
-    (goto-char (point-min))
-    ;
-    ; The specification of the completion for files is different from that for symbols.
-    ; The completion for symbols matches only to the head of the symbol. But the completion
-    ; for files matches any part of the path.
-    ;
-    (while (not (eobp))
-      (looking-at ".*")
-      (intern (gtags-match-string 0) complete-list)
-      (forward-line))
-    (kill-buffer (current-buffer))
-    ; recover current buffer
-    (set-buffer prev-buffer)
-    ; execute completion
-    (cond ((eq code nil)
-           (try-completion string complete-list predicate))
-          ((eq code t)
-           (all-completions string complete-list predicate))
-          ((eq code 'lambda)
-           (if (intern-soft string complete-list) t nil)))))
+  (let* ((cache-found nil)
+         (projectile-require-project-root nil)
+         (root (projectile-project-root)))
+    (when flag
+      (let ((project-cache (assoc root gtags-completing-caches)))
+        (when project-cache
+          (let ((cache (assq flag (cdr project-cache))))
+            (when cache
+              (setq cache-found (cdr cache)))))))
+
+    (or cache-found
+        (let ((option (cond ((eq flag 'files)   "-cPo")
+                            ((eq flag 'gsyms)   "-cs")
+                            ((eq flag 'idutils) "-cI")
+                            ((eq flag 'gtags) "-c")
+                            (t (error "invalid flag: %S" flag))))
+              (complete-list (make-vector 63 0))
+              (prev-buffer (current-buffer)))
+          ;; (if case-fold-search
+          ;;     (setq option (concat option "i")))
+          ;; build completion list
+          (message "Generating gtags cache...")
+          (set-buffer (generate-new-buffer "*Completions*"))
+          (call-process "global" nil t nil option string)
+          (goto-char (point-min))
+          ;;
+          ;; The specification of the completion for files is different from that for symbols.
+          ;; The completion for symbols matches only to the head of the symbol. But the completion
+          ;; for files matches any part of the path.
+          ;;
+          (while (not (eobp))
+            (looking-at ".*")
+            (intern (gtags-match-string 0) complete-list)
+            (forward-line))
+          (kill-buffer (current-buffer))
+          ;; recover current buffer
+          (set-buffer prev-buffer)
+          ;; execute completion
+          (let ((completions
+                 (cond ((eq code nil)
+                        (try-completion string complete-list predicate))
+                       ((eq code t)
+                        (all-completions string complete-list predicate))
+                       ((eq code 'lambda)
+                        (error "what is this?")
+                        ;; (if (intern-soft string complete-list) t nil)
+                        )))
+                (project-cache (assoc root gtags-completing-caches)))
+            (if project-cache
+                (let ((value (cdr project-cache)))
+                  (setcdr project-cache (cons (cons flag completions) value)))
+              (setq gtags-completing-caches (cons (cons root (list (cons flag completions)))
+                                                  gtags-completing-caches)))
+            completions)))))
 
 ;; get the path of gtags root directory.
 (defun gtags-get-rootpath ()
@@ -704,7 +734,7 @@
          (gtags-pop-context)
          (kill-buffer buffer))
         ((1)
-         (message "Searching" prompt tagname)
+         (message "Unique match found" prompt tagname)
          (gtags-select-setup-buffer)
          (gtags-select-it t other-win))
         (t
