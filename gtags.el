@@ -124,6 +124,11 @@
   :group 'gtags
   :type 'boolean)
 
+(defcustom gtags-global-program "global"
+  "`global' executable. "
+  :type 'string
+  :group 'gtags)
+
 ;; Variables
 (defvar gtags-current-buffer nil
   "Current buffer.")
@@ -365,7 +370,7 @@
           ;; build completion list
           (message "Generating gtags cache...")
           (set-buffer (generate-new-buffer "*Completions*"))
-          (call-process "global" nil t nil option string)
+          (call-process gtags-global-program nil t nil option string)
           (goto-char (point-min))
           ;;
           ;; The specification of the completion for files is different from that for symbols.
@@ -403,7 +408,7 @@
     (save-excursion
       (setq buffer (generate-new-buffer (generate-new-buffer-name "*rootdir*")))
       (set-buffer buffer)
-      (setq n (call-process "global" nil t nil "-pr"))
+      (setq n (call-process gtags-global-program nil t nil "-pr"))
       (if (= n 0)
         (setq path (file-name-as-directory (buffer-substring (point-min)(1- (point-max))))))
       (kill-buffer buffer))
@@ -717,7 +722,7 @@
 
       (message "Searching %s `%s' ..." prompt tagname)
       (unless (= 0 (apply 'call-process
-                          `("global" nil t nil ,option "--color=always" "--encode-path=\" \t\""
+                          `(,gtags-global-program nil t nil ,option "--color=always" "--encode-path=\" \t\""
                             "-N"
                             ,@(when (equal flag "C") (list context)) ,tagname)))
         (message "%s" (buffer-substring (save-excursion
