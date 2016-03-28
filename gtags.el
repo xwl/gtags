@@ -370,9 +370,8 @@
           (set-buffer (generate-new-buffer "*Completions*"))
 
           ;; build completion list
-          (gtags-shell-command
-           (list "cd" (gtags-get-rootpath) "&&" gtags-global-program option string)
-           "Generating gtags cache...")
+          (gtags-shell-command (list gtags-global-program option string)
+                               "Generating gtags cache...")
 
           (goto-char (point-min))
           ;;
@@ -741,14 +740,12 @@ buffer.  Optional PROMPT indicates the progress of the command."
       ;;       (setq rootdir (gtags-get-rootpath)))
       ;;     (if rootdir (cd rootdir)))))
 
-      (gtags-shell-command
-       (list "cd" (gtags-get-rootpath) "&&"
-             gtags-global-program
-             option
-             "--color=always" "--encode-path=\" \t\"" "-N"
-             (when (equal flag "C") (list context))
-             tagname)
-       (format "Searching %s `%s' ..." prompt tagname))
+      (gtags-shell-command (list gtags-global-program
+                                 option
+                                 "--color=always" "--encode-path=\" \t\"" "-N"
+                                 (when (equal flag "C") (list context))
+                                 tagname)
+                           (format "Searching %s `%s' ..." prompt tagname))
 
       (message "%s" (buffer-substring (save-excursion
                                         (goto-char (point-max))
@@ -796,15 +793,6 @@ buffer.  Optional PROMPT indicates the progress of the command."
                                            (line-beginning-position)
                                            (line-end-position))))
 
-        (when (tramp-tramp-file-p default-directory)
-          (let* ((vec    (tramp-dissect-file-name default-directory t))
-                 (method (tramp-file-name-method vec))
-                 (user   (tramp-file-name-user vec))
-                 (host   (tramp-file-name-real-host vec)))
-            (setq file (format "/%s:%s@%s:%s/%s"
-                               method user host
-                               (gtags-get-rootpath) file))))
-        ;;
         ;; Why should we load new file before killing current-buffer?
         ;;
         ;; If you kill current-buffer before loading new file, current directory
