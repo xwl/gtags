@@ -1,11 +1,10 @@
 ;;; gtags.el --- gtags facility for Emacs
-
 ;;
 ;; Copyright (c) 1997, 1998, 1999, 2000, 2006, 2007, 2008, 2009, 2010
 ;;		2011, 2012, 2013
 ;;	Tama Communications Corporation
 ;;
-;; Copyright (c) 2012, 2013, 2015 William Xu
+;; Copyright (c) 2012, 2013, 2015, 2016 William Xu
 ;;
 ;; This file is part of GNU GLOBAL.
 ;;
@@ -74,6 +73,7 @@
 
 (require 'thingatpt)
 (require 'projectile)
+(require 'tramp)
 
 (defvar gtags-mode nil
   "Non-nil if Gtags mode is enabled.")
@@ -367,10 +367,13 @@
               (prev-buffer (current-buffer)))
           ;; (if case-fold-search
           ;;     (setq option (concat option "i")))
-          ;; build completion list
-          (message "Generating gtags cache...")
           (set-buffer (generate-new-buffer "*Completions*"))
-          (call-process gtags-global-program nil t nil option string)
+
+          ;; build completion list
+          (gtags-shell-command
+           (list "cd" (gtags-get-rootpath) "&&" gtags-global-program option string)
+           "Generating gtags cache...")
+
           (goto-char (point-min))
           ;;
           ;; The specification of the completion for files is different from that for symbols.
@@ -404,15 +407,10 @@
 
 ;; get the path of gtags root directory.
 (defun gtags-get-rootpath ()
-  (let (path buffer)
-    (save-excursion
-      (setq buffer (generate-new-buffer (generate-new-buffer-name "*rootdir*")))
-      (set-buffer buffer)
-      (setq n (call-process gtags-global-program nil t nil "-pr"))
-      (if (= n 0)
-        (setq path (file-name-as-directory (buffer-substring (point-min)(1- (point-max))))))
-      (kill-buffer buffer))
-    path))
+  (save-excursion
+    (with-temp-buffer
+      (gtags-shell-command (list gtags-global-program " -pr") "")
+      (file-name-as-directory (buffer-substring (point-min)(1- (point-max)))))))
 
 ;; decode path name
 ;; The path is encoded by global(1) with the --encode-path="..." option.
@@ -425,6 +423,29 @@
                      (format "%c" (string-to-number (substring path (match-beginning 1) (match-end 1)) 16))))
       (setq path (substring path (match-end 1))))
     (concat result path)))
+
+(defun gtags-shell-command (commands &optional prompt)
+  "Run COMMANDS, which can be a string or a list of strings.
+
+Wrap it with tramp handler if applicable.  Output goes to current
+buffer.  Optional PROMPT indicates the progress of the command."
+  (let ((handler (find-file-name-handler (directory-file-name default-directory)
+                                         'shell-command))
+        (cmd (if (listp commands)
+                 (mapconcat 'identity commands " ")
+               commands))
+        (n 0))
+
+    (when prompt
+      (message "%s" prompt))
+
+    (if handler
+        (setq n (funcall handler 'shell-command cmd (current-buffer)))
+      (setq n (shell-command cmd (current-buffer))))
+
+    (unless (zerop n)
+      (error "Error: %s: %d" cmd n))))
+
 
 ;;
 ;; interactive command
@@ -720,42 +741,46 @@
       ;;       (setq rootdir (gtags-get-rootpath)))
       ;;     (if rootdir (cd rootdir)))))
 
-      (message "Searching %s `%s' ..." prompt tagname)
-      (unless (= 0 (apply 'call-process
-                          `(,gtags-global-program nil t nil ,option "--color=always" "--encode-path=\" \t\""
-                            "-N"
-                            ,@(when (equal flag "C") (list context)) ,tagname)))
-        (message "%s" (buffer-substring (save-excursion
-                                          (goto-char (point-max))
-                                          (forward-line -1)
-                                          (line-beginning-position))
-                                        (point-max))))
+      (gtags-shell-command
+       (list "cd" (gtags-get-rootpath) "&&"
+             gtags-global-program
+             option
+             "--color=always" "--encode-path=\" \t\"" "-N"
+             (when (equal flag "C") (list context))
+             tagname)
+       (format "Searching %s `%s' ..." prompt tagname))
 
-      (goto-char (point-min))
-      (setq lines (count-lines (point-min) (point-max)))
-      (case lines
-        ((0)
-         (message "%s: %s not found" tagname prompt)
-         (gtags-pop-context)
-         (kill-buffer buffer))
-        ((1)
-         (message "Unique match found" prompt tagname)
-         (gtags-select-setup-buffer)
-         (gtags-select-it t other-win))
-        (t
-         (if (null other-win)
-             (switch-to-buffer buffer)
-           (switch-to-buffer-other-window buffer))
-         (gtags-select-setup-buffer)
-         (case src-major-mode
-           ((c++-mode)
-            (gtags-select-mode-c++))
-           ((c-mode)
-            (gtags-select-mode-c))
-           (t
-            (gtags-select-mode)))))
+      (message "%s" (buffer-substring (save-excursion
+                                        (goto-char (point-max))
+                                        (forward-line -1)
+                                        (line-beginning-position))
+                                      (point-max))))
 
-      (and lines (> lines 0)))))
+    (goto-char (point-min))
+    (setq lines (count-lines (point-min) (point-max)))
+    (case lines
+      ((0)
+       (message "%s: %s not found" tagname prompt)
+       (gtags-pop-context)
+       (kill-buffer buffer))
+      ((1)
+       (message "Unique match found" prompt tagname)
+       (gtags-select-setup-buffer)
+       (gtags-select-it t other-win))
+      (t
+       (if (null other-win)
+           (switch-to-buffer buffer)
+         (switch-to-buffer-other-window buffer))
+       (gtags-select-setup-buffer)
+       (case src-major-mode
+         ((c++-mode)
+          (gtags-select-mode-c++))
+         ((c-mode)
+          (gtags-select-mode-c))
+         (t
+          (gtags-select-mode)))))
+
+    (and lines (> lines 0))))
 
 ;; select a tag line from lines
 (defun gtags-select-it (delete &optional other-win)
@@ -770,6 +795,15 @@
         (setq file (gtags-decode-pathname (buffer-substring
                                            (line-beginning-position)
                                            (line-end-position))))
+
+        (when (tramp-tramp-file-p default-directory)
+          (let* ((vec    (tramp-dissect-file-name default-directory t))
+                 (method (tramp-file-name-method vec))
+                 (user   (tramp-file-name-user vec))
+                 (host   (tramp-file-name-real-host vec)))
+            (setq file (format "/%s:%s@%s:%s/%s"
+                               method user host
+                               (gtags-get-rootpath) file))))
         ;;
         ;; Why should we load new file before killing current-buffer?
         ;;
