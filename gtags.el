@@ -751,33 +751,34 @@ buffer.  Optional PROMPT indicates the progress of the command."
                                         (goto-char (point-max))
                                         (forward-line -1)
                                         (line-beginning-position))
-                                      (point-max))))
+                                      (point-max)))
 
-    (goto-char (point-min))
-    (setq lines (count-lines (point-min) (point-max)))
-    (case lines
-      ((0)
-       (message "%s: %s not found" tagname prompt)
-       (gtags-pop-context)
-       (kill-buffer buffer))
-      ((1)
-       (message "Unique match found" prompt tagname)
-       (gtags-select-setup-buffer)
-       (gtags-select-it t other-win))
-      (t
-       (if (null other-win)
-           (switch-to-buffer buffer)
-         (switch-to-buffer-other-window buffer))
-       (gtags-select-setup-buffer)
-       (case src-major-mode
-         ((c++-mode)
-          (gtags-select-mode-c++))
-         ((c-mode)
-          (gtags-select-mode-c))
-         (t
-          (gtags-select-mode)))))
+      (goto-char (point-min))
+      (setq lines (count-lines (point-min) (point-max)))
 
-    (and lines (> lines 0))))
+      (case lines
+        ((0)
+         (message "%s: %s not found" tagname prompt)
+         (gtags-pop-context)
+         (kill-buffer buffer))
+        ((1)
+         (message "Unique match found" prompt tagname)
+         (gtags-select-setup-buffer)
+         (gtags-select-it t other-win))
+        (t
+         (if (null other-win)
+             (switch-to-buffer buffer)
+           (switch-to-buffer-other-window buffer))
+         (gtags-select-setup-buffer)
+         (case src-major-mode
+           ((c++-mode)
+            (gtags-select-mode-c++))
+           ((c-mode)
+            (gtags-select-mode-c))
+           (t
+            (gtags-select-mode)))))
+
+      (and lines (> lines 0)))))
 
 ;; select a tag line from lines
 (defun gtags-select-it (delete &optional other-win)
