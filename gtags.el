@@ -627,6 +627,19 @@ buffer.  Optional PROMPT indicates the progress of the command."
         (setq gtags-current-buffer (current-buffer))
         (goto-char (nth 1 context))))))
 
+(defun gtags-regenerate ()
+  "Regenerate global tag files.
+
+Please generate tag files from command line for the first time."
+  (interactive)
+  (let ((root (gtags-get-rootpath)))
+    (delete-file (concat root "/GTAGS"))
+    (ignore-errors
+      (delete-file (concat root "/GRTAGS"))
+      (delete-file (concat root "/GPATH")))
+    (cd root)
+    (gtags-shell-command "gtags" "Regenerating gtags")))
+
 
 ;;
 ;; common function
