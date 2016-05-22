@@ -438,9 +438,10 @@ buffer.  Optional PROMPT indicates the progress of the command."
     (when prompt
       (message "%s" prompt))
 
-    (if handler
-        (setq n (funcall handler 'shell-command cmd (current-buffer)))
-      (setq n (shell-command cmd (current-buffer))))
+    (save-window-excursion
+      (if handler
+          (setq n (funcall handler 'shell-command cmd (current-buffer)))
+        (setq n (shell-command cmd (current-buffer)))))
 
     (unless (zerop n)
       (error "Error: %s: %d" cmd n))))
